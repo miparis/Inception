@@ -87,3 +87,45 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * `COPY tools/mariadb.sh ...` y `RUN chmod +x ...`: Copia el script al contenedor y le asegura permisos de ejecución.
 * `EXPOSE 3306`: Documenta y prepara el puerto 3306 para la red interna.
 * `ENTRYPOINT ["/mariadb.sh"]`: Define el script como el único comando que se ejecutará al iniciar el contenedor.
+
+# Documentación del Bloque 3: WordPress y PHP-FPM
+
+## 1. Conceptos Fundamentales
+
+* **PHP-FPM (FastCGI Process Manager):** Es el motor que procesa el código escrito en PHP. Dado que WordPress está programado en PHP, necesita este motor para funcionar. NGINX (el servidor web) no entiende PHP por sí solo, así que le enviará las peticiones a PHP-FPM, este ejecutará el código y le devolverá la página web ya renderizada en HTML.
+* **WP-CLI (WordPress Command Line Interface):** Es una herramienta oficial que permite instalar, configurar y gestionar WordPress completamente desde la terminal, sin necesidad de abrir un navegador web. Es clave en nuestro proyecto porque necesitamos automatizar la instalación mediante un script.
+* **Condición de Carrera (Race Condition) y "Ping":** Al ejecutar `docker-compose up`, todos los contenedores arrancan casi a la vez. MariaDB necesita varios segundos para iniciar su proceso y abrir su puerto. Si WordPress intenta instalarse antes de que MariaDB esté lista, la instalación fallará y el contenedor morirá. Para evitarlo, usamos un bucle (un "ping" constante a la base de datos) que pausa el script de WordPress hasta que MariaDB responda.
+
+## 2. Resumen del Bloque 3: WordPress + PHP-FPM
+
+* **¿Qué hicimos?** Creamos un contenedor dedicado exclusivamente a ejecutar PHP y alojar los archivos de WordPress. Configuramos PHP-FPM para que escuche peticiones externas en el puerto 9000 y creamos un script que automatiza la instalación de la web y la creación de sus usuarios.
+* **¿Por qué lo hicimos?** El subject exige obligatoriamente que WordPress y NGINX estén en contenedores separados. Además, nos exige crear dos usuarios específicos (cuidando que el administrador no tenga la palabra "admin") y prohíbe usar claves estáticas, obligándonos a leer el archivo `.env`.
+* **¿Cómo funciona por detrás?** Cuando arranca el contenedor, el script espera pacientemente a MariaDB. Una vez que la base de datos está online, el script comprueba si WordPress ya está instalado. Si no lo está, lo descarga, inyecta las variables del `.env` para conectarlo a la base de datos, y crea los perfiles de usuario. Finalmente, usa `exec` para ceder el control al motor PHP-FPM, manteniéndolo en primer plano (PID 1).
+
+## 3. Análisis línea por línea de los archivos
+
+### Archivo de Configuración de PHP-FPM (`www.conf`)
+
+* `[www]`: Define un grupo de procesos (pool) para procesar las peticiones web.
+* `user / group = www-data`: Ejecuta los procesos bajo el usuario estándar de servidores web por motivos de seguridad.
+* `listen = 9000`: Por defecto, PHP escucha en un archivo interno inalcanzable desde otros contenedores. Al poner `9000`, abrimos un puerto de red para que el contenedor NGINX pueda enviarle el tráfico.
+* `clear_env = no`: **Crítico.** Por razones de seguridad, PHP suele limpiar (ignorar) las variables de entorno del sistema. Al poner `no`, le permitimos leer las contraseñas inyectadas desde nuestro `.env`.
+
+### Script de Inicialización (`wordpress.sh`)
+
+* `mkdir -p /var/www/wordpress`: Crea la ruta oficial donde vivirá la web (y que luego conectaremos a nuestro volumen del host).
+* `while ! mariadb -h mariadb ...`: El famoso "ping". Intenta conectarse a la base de datos `mariadb`. Si falla, duerme 3 segundos (`sleep 3`) y repite el proceso hasta tener éxito.
+* `wp core download --allow-root`: Descarga los archivos limpios de WordPress. La bandera `--allow-root` es necesaria porque estamos ejecutando el script como el superusuario del contenedor.
+* `wp config create ...`: Genera el archivo `wp-config.php` vinculando los parámetros `--dbname`, `--dbuser` y `--dbpass` con nuestras variables seguras.
+* `wp core install ...`: Instala la base de datos de WordPress y genera el usuario administrador (leyendo `$WP_ADMIN_USER`, que verificamos que no contenga la palabra "admin").
+* `wp user create ...`: Crea el segundo usuario regular que exige el subject, asignándole el rol de "autor".
+* `exec /usr/sbin/php-fpm7.4 -F`: Reemplaza el proceso bash por el de PHP-FPM. La bandera `-F` (Foreground) fuerza a PHP a quedarse en primer plano (como PID 1), evitando que el contenedor muera.
+
+### El Dockerfile
+
+* `FROM debian:bullseye`: Usa la base permitida por el subject.
+* `RUN apt install ... wget curl php7.4 php7.4-fpm php7.4-mysql mariadb-client`: Instala el motor PHP, el conector entre PHP y MySQL, y el cliente de MariaDB necesario para hacer el "ping".
+* `wget ... wp-cli.phar ... mv ... /usr/local/bin/wp`: Descarga la herramienta WP-CLI y la mueve a una ruta global del sistema operativo para poder usar el comando `wp`.
+* `COPY conf/www.conf ...`: Reemplaza la configuración por defecto por nuestro archivo que abre el puerto 9000.
+* `EXPOSE 9000`: Documenta que el contenedor recibe tráfico en este puerto.
+* `ENTRYPOINT ["/wordpress.sh"]`: Define nuestro script de bash como el comando principal del contenedor.
