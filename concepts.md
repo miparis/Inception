@@ -129,3 +129,45 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * `COPY conf/www.conf ...`: Reemplaza la configuración por defecto por nuestro archivo que abre el puerto 9000.
 * `EXPOSE 9000`: Documenta que el contenedor recibe tráfico en este puerto.
 * `ENTRYPOINT ["/wordpress.sh"]`: Define nuestro script de bash como el comando principal del contenedor.
+
+# Documentación del Bloque 4: NGINX y Seguridad TLS
+
+## 1. Conceptos Fundamentales
+*   **NGINX:** Es el servidor web que actúa como proxy inverso. Es la única puerta de entrada a nuestra infraestructura. Recibe las peticiones del exterior, comprueba que sean seguras y las redirige al contenedor de WordPress.
+*   **SSL/TLS (Secure Sockets Layer / Transport Layer Security):** Protocolo criptográfico que cifra los datos entre el navegador del usuario y el servidor. El proyecto exige utilizar específicamente TLSv1.2 o TLSv1.3.
+*   **Certificado Autofirmado (Self-signed):** Como la infraestructura es local, generamos nuestro propio certificado con OpenSSL. El cifrado es real y efectivo, aunque los navegadores mostrarán una advertencia inicial de seguridad al no estar firmado por una Entidad Certificadora (CA) externa.
+
+## 2. Configuración de NGINX (`nginx.conf`)
+*   `listen 443 ssl`: NGINX solo escucha en el puerto HTTPS (443), bloqueando el tráfico no cifrado por el puerto 80.
+*   `ssl_certificate` y `ssl_certificate_key`: Apuntan a las rutas donde el Dockerfile guardó los certificados generados.
+*   `ssl_protocols TLSv1.2 TLSv1.3`: Cumplimiento estricto del *subject* de 42, deshabilitando versiones antiguas e inseguras de TLS/SSL.
+*   `fastcgi_pass wordpress:9000`: La directiva clave. NGINX no ejecuta PHP; cuando llega una petición para un archivo `.php`, NGINX se la reenvía por la red interna de Docker al contenedor de WordPress en el puerto 9000.
+
+## 3. Construcción del Contenedor (`Dockerfile`)
+*   **`openssl req -x509 ...`**: Este comando genera de forma no interactiva (sin hacer preguntas en consola) una clave privada RSA de 2048 bits y un certificado válido por 365 días.
+*   **El parámetro `-subj`**: Rellena automáticamente los datos del certificado (País: ES, Organización: 42, Common Name: miparis.42.fr).
+*   **Regla del PID 1 (`daemon off;`)**: Por defecto, NGINX se ejecuta en segundo plano. El comando `CMD ["nginx", "-g", "daemon off;"]` lo fuerza a ejecutarse en primer plano, evitando que el contenedor se apague inmediatamente tras arrancar.
+
+# Documentación del Bloque 5: Orquestación con Docker Compose
+
+## 1. Conceptos Fundamentales
+*   **Docker Compose (`docker-compose.yml`):** Es la herramienta que permite definir y ejecutar aplicaciones Docker multi-contenedor. En lugar de levantar cada contenedor por separado, usamos este archivo YAML como "plano maestro" para indicar redes, volúmenes, puertos y el orden de encendido.
+*   **YAML (.yml):** Formato de serialización de datos muy estricto con la indentación (espacios, no tabulaciones).
+
+## 2. Directivas Clave del archivo YAML
+*   `depends_on`: Establece jerarquía. WordPress espera a MariaDB, y NGINX espera a WordPress. Evita que los servicios intenten conectarse antes de que la base de datos esté lista.
+*   `networks`: Todos los contenedores están unidos a `inception` (tipo bridge). Esto aísla el proyecto del exterior y permite que los contenedores se comuniquen usando su nombre (ej. `mariadb`) gracias al DNS interno de Docker.
+*   `volumes` (Host Bind Mounts): Cumpliendo el *subject*, se vinculan directorios virtuales (`/var/lib/mysql` y `/var/www/wordpress`) a directorios físicos del host (`/home/miparis/data/...`). Esto garantiza la persistencia absoluta de los datos aunque los contenedores se destruyan.
+
+---
+
+# Documentación del Bloque 6: Automatización (Makefile)
+
+## 1. Concepto
+Un `Makefile` es un script de automatización estructurado en "reglas" o "targets". Su objetivo en Inception es servir de panel de control para no memorizar comandos largos de Docker. Exige el uso de tabulaciones para la indentación de los comandos.
+
+## 2. Reglas Principales
+*   `up`: Ejecuta `docker-compose up -d --build`. Construye las imágenes si hay cambios y levanta los contenedores en modo *detached* (segundo plano).
+*   `down`: Ejecuta `docker-compose down`. Detiene los contenedores de forma limpia sin borrar los datos ni las imágenes.
+*   `clean`: Añade las banderas `-v` y `--rmi all` al comando down para borrar volúmenes virtuales, redes e imágenes base descargadas.
+*   `fclean`: Hace un borrado profundo. Elimina físicamente el contenido de las carpetas locales de persistencia (`/home/miparis/data/`) mediante `rm -rf` y ejecuta `docker system prune -af` para limpiar cualquier caché residual del motor de Docker.

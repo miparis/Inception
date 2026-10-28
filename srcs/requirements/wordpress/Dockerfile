@@ -1,5 +1,10 @@
 FROM debian:bullseye
 
+# update rpos to archive.debian.org as we need to use Debian Bullseye (Debian 11)
+RUN sed -i 's/deb.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
+    sed -i 's/security.debian.org/archive.debian.org/g' /etc/apt/sources.list && \
+    sed -i '/bullseye-updates/d' /etc/apt/sources.list
+
 # Instal PHP, extensions, MariaDB client and tools as curl/wget
 RUN apt update -y && apt upgrade -y && \
     apt-get install -y wget curl php7.4 php7.4-fpm php7.4-mysql mariadb-client
