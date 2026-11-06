@@ -1,4 +1,4 @@
-*This project has been created as part of the 42 cursus by miparis*
+*This project has been created as part of the 42 curriculum by miparis*
 
 ## Project Description
 Inception is a System Administration project that aims to broaden knowledge of system administration by using Docker. The goal is to virtualize a complete personal infrastructure within a single Virtual Machine. 
@@ -36,7 +36,7 @@ Docker is used to containerize each service individually, ensuring isolated and 
 4. Run `make` to build and deploy the infrastructure.
 5. Access the website at `https://miparis.42.fr`.
 
-## References
+## Resources
 * [Docker Documentation](https://docs.docker.com/)
 * [NGINX Official Documentation](https://nginx.org/en/docs/)
 * [WordPress Developer Resources](https://developer.wordpress.org/)

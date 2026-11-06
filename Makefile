@@ -6,7 +6,7 @@
 #    By: miparis <miparis@student.42madrid.com>     +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2026/10/28 19:39:45 by miparis           #+#    #+#              #
-#    Updated: 2026/10/28 19:48:32 by miparis          ###   ########.fr        #
+#    Updated: 2026/11/06 17:54:31 by miparis          ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -39,6 +39,10 @@ clean:
 	@echo "$(BOLD)$(RED)🗑️ Deleting containers, networks and images...$(NC)"
 	@docker-compose -f $(COMPOSE) down -v --rmi all
 	@echo "$(BOLD)$(GREEN)🧹 Basic cleaning completed$(NC)"
+
+volumes:
+	mkdir -p /home/miparis/data/mariadb
+	mkdir -p /home/miparis/data/wordpress
 
 fclean: clean
 	@echo "$(BOLD)$(PURPLE)☢️ Executing deep cleaning (deleting local data)...$(NC)"
