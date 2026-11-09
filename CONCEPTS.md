@@ -1,4 +1,4 @@
-# Documentación del Bloque 1: Entorno Base y Conceptos Clave
+#  Entorno Base y Conceptos Clave
 
 ## 1. Infraestructura
 
