@@ -1,6 +1,6 @@
 # Documentación del Bloque 1: Entorno Base y Conceptos Clave
 
-## 1. Conceptos Fundamentales de la Infraestructura
+## 1. Infraestructura
 
 * **Contenedor vs. Máquina Virtual:** Un contenedor es un paquete de software ligero que incluye código, herramientas y dependencias, compartiendo el núcleo (kernel) del sistema operativo anfitrión. Una Máquina Virtual (VM) emula un hardware y un sistema operativo completo con su propio núcleo, consumiendo muchos más recursos y tiempo de arranque.
 * **MariaDB:** Sistema de gestión de bases de datos relacional. En esta arquitectura, actúa como el almacén persistente interno (completamente aislado del exterior) donde se guardan los usuarios y la configuración del sitio web.
@@ -9,11 +9,11 @@
 
 ## 2. Redirección del Dominio Local (`/etc/hosts`)
 
-Al mapear `miparis.42.fr` a `127.0.0.1` (localhost) en el archivo `/etc/hosts`, engañamos al sistema operativo. Esto provoca que el tráfico web dirigido a ese dominio no salga a buscar un servidor DNS en internet, sino que se dirija directamente al puerto local (443) donde nuestro contenedor NGINX estará escuchando.
+Al mapear `miparis.42.fr` a `127.0.0.1` (localhost) en el archivo `/etc/hosts`,hacemos que el tráfico web dirigido a ese dominio no salga a buscar un servidor DNS en internet, sino que se dirija directamente al puerto local (443) donde nuestro contenedor NGINX estará escuchando.
 
 ## 3. Creación de Volúmenes Nombrados (`/home/miparis/data/...`)
 
-Los contenedores son efímeros por naturaleza (si se destruye el contenedor, se pierden sus datos). Para asegurar que la base de datos y los archivos de la web persistan, el proyecto exige usar volúmenes nombrados de Docker vinculados a la ruta física `/home/login/data` en la máquina anfitriona. Así, cualquier cambio interno en rutas como `/var/lib/mysql` se reflejará físicamente en el disco duro del host de forma segura.
+Para asegurar que la base de datos y los archivos de la web persistan, el proyecto exige usar volúmenes nombrados de Docker vinculados a la ruta física `/home/login/data` en la máquina anfitriona. Así, cualquier cambio interno en rutas como `/var/lib/mysql` se reflejará físicamente en el disco duro del host de forma segura. Los mismos son creados al momento de compilar, creando las carpetas especificas para cada volumen en la ruta específicada.
 
 ## 4. Estructura de Carpetas del Proyecto
 
@@ -41,10 +41,7 @@ WP_USER_PASSWORD=tu_password_wp_user
 ```
 ---
 
-# Cuidado !!
-Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/data. Si tu usuario de Ubuntu se llama admin en lugar de miparis, y hardcodeas la ruta /home/admin/data en tu docker-compose.yml, el proyecto fallará inmediatamente en la evaluación oficial.   
-
-# Documentación del Bloque 2: Servicio MariaDB
+# Servicio MariaDB
 
 ## 1. Conceptos Fundamentales
 
@@ -54,13 +51,13 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * **¿Cómo funciona la red interna de Docker?**
   Docker crea un puente virtual (una red privada) que aísla los contenedores del exterior. La comunicación funciona gracias a un servidor DNS interno: un contenedor se comunica con otro simplemente usando su nombre (ej. `mariadb:3306`). Ningún servicio externo puede acceder a esta red salvo que abramos un puerto explícito hacia el host (lo cual solo haremos con NGINX en el puerto 443).
 
-## 2. Resumen del Bloque 2: MariaDB
+## 2. ¿Que se debe hacer con MariaDB?
 
-* **¿Qué hicimos?** Construimos desde cero el contenedor de la base de datos MariaDB usando Debian, abrimos sus puertos a la red interna y creamos un script para inyectar automáticamente nuestros usuarios y contraseñas.
-* **¿Por qué lo hicimos?** Para cumplir la norma estricta de no dejar contraseñas "hardcodeadas" en el código (se usan las del `.env`) y para asegurar que el proceso se ejecute legítimamente en primer plano (PID 1) sin usar trucos prohibidos como `tail -f` o bucles infinitos.
-* **¿Cómo funciona por detrás?** Al levantar el contenedor, este ejecuta un script temporal que enciende MariaDB, crea la base de datos y configura los permisos. Luego lo apaga y usa el comando `exec` para ceder el control absoluto al demonio de la base de datos para que corra en primer plano. Sus archivos internos (`/var/lib/mysql`) persisten gracias al volumen en `/home/miparis/data/mariadb`.
+* Construir desde cero el contenedor de la base de datos MariaDB usando Debian, abrimos sus puertos a la red interna y creamos un script para inyectar automáticamente nuestros usuarios y contraseñas.
+* Para cumplir la norma estricta de no dejar contraseñas "hardcodeadas" en el código (se usan las del `.env`) y para asegurar que el proceso se ejecute legítimamente en primer plano (PID 1) sin usar trucos prohibidos como `tail -f` o bucles infinitos.
+* Al levantar el contenedor, este ejecuta un script temporal que enciende MariaDB, crea la base de datos y configura los permisos. Luego lo apaga y usa el comando `exec` para ceder el control absoluto al demonio de la base de datos para que corra en primer plano. Sus archivos internos (`/var/lib/mysql`) persisten gracias al volumen en `/home/miparis/data/mariadb`.
 
-## 3. Análisis línea por línea de los archivos
+## 3. Funciones especificads de cada .conf y .sh
 
 ### Archivo de Configuración (`50-server.cnf`)
 * `[mysqld]`: Inicia el bloque de configuración del servidor.
@@ -80,7 +77,7 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * `mysqladmin -u root -p${MYSQL_ROOT_PASSWORD} shutdown`: Apaga la instancia temporal de configuración.
 * `exec mysqld_safe`: (MUY IMPORTANTE) Reemplaza el proceso bash por MariaDB nativo. Convierte a la base de datos en el proceso PID 1 del contenedor, manteniéndolo vivo en primer plano sin usar parches ilegales.
 
-### El Dockerfile
+### Dockerfile
 * `FROM debian:bullseye`: Usa la penúltima versión estable de Debian como base.
 * `RUN apt update -y && ... install mariadb-server -y`: Instala limpiamente MariaDB desde los repositorios de Debian.
 * `COPY conf/50-server.cnf ...`: Sobrescribe la configuración por defecto con nuestro archivo personalizado.
@@ -88,7 +85,7 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * `EXPOSE 3306`: Documenta y prepara el puerto 3306 para la red interna.
 * `ENTRYPOINT ["/mariadb.sh"]`: Define el script como el único comando que se ejecutará al iniciar el contenedor.
 
-# Documentación del Bloque 3: WordPress y PHP-FPM
+# WordPress y PHP-FPM
 
 ## 1. Conceptos Fundamentales
 
@@ -96,13 +93,13 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * **WP-CLI (WordPress Command Line Interface):** Es una herramienta oficial que permite instalar, configurar y gestionar WordPress completamente desde la terminal, sin necesidad de abrir un navegador web. Es clave en nuestro proyecto porque necesitamos automatizar la instalación mediante un script.
 * **Condición de Carrera (Race Condition) y "Ping":** Al ejecutar `docker-compose up`, todos los contenedores arrancan casi a la vez. MariaDB necesita varios segundos para iniciar su proceso y abrir su puerto. Si WordPress intenta instalarse antes de que MariaDB esté lista, la instalación fallará y el contenedor morirá. Para evitarlo, usamos un bucle (un "ping" constante a la base de datos) que pausa el script de WordPress hasta que MariaDB responda.
 
-## 2. Resumen del Bloque 3: WordPress + PHP-FPM
+## 2. ¿Que se debe hacer con WordPress y PHP-FPM?
 
-* **¿Qué hicimos?** Creamos un contenedor dedicado exclusivamente a ejecutar PHP y alojar los archivos de WordPress. Configuramos PHP-FPM para que escuche peticiones externas en el puerto 9000 y creamos un script que automatiza la instalación de la web y la creación de sus usuarios.
-* **¿Por qué lo hicimos?** El subject exige obligatoriamente que WordPress y NGINX estén en contenedores separados. Además, nos exige crear dos usuarios específicos (cuidando que el administrador no tenga la palabra "admin") y prohíbe usar claves estáticas, obligándonos a leer el archivo `.env`.
-* **¿Cómo funciona por detrás?** Cuando arranca el contenedor, el script espera pacientemente a MariaDB. Una vez que la base de datos está online, el script comprueba si WordPress ya está instalado. Si no lo está, lo descarga, inyecta las variables del `.env` para conectarlo a la base de datos, y crea los perfiles de usuario. Finalmente, usa `exec` para ceder el control al motor PHP-FPM, manteniéndolo en primer plano (PID 1).
+* Creamos un contenedor dedicado exclusivamente a ejecutar PHP y alojar los archivos de WordPress. Configuramos PHP-FPM para que escuche peticiones externas en el puerto 9000 y creamos un script que automatiza la instalación de la web y la creación de sus usuarios.
+* Se exige obligatoriamente que WordPress y NGINX estén en contenedores separados. Además, nos exige crear dos usuarios específicos (cuidando que el administrador no tenga la palabra "admin") y prohíbe usar claves estáticas, obligándonos a leer el archivo `.env`.
+* Cuando arranca el contenedor, el script espera pacientemente a MariaDB. Una vez que la base de datos está online, el script comprueba si WordPress ya está instalado. Si no lo está, lo descarga, inyecta las variables del `.env` para conectarlo a la base de datos, y crea los perfiles de usuario. Finalmente, usa `exec` para ceder el control al motor PHP-FPM, manteniéndolo en primer plano (PID 1).
 
-## 3. Análisis línea por línea de los archivos
+## 3.  Funciones especificads de cada .conf y .sh
 
 ### Archivo de Configuración de PHP-FPM (`www.conf`)
 
@@ -121,7 +118,7 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * `wp user create ...`: Crea el segundo usuario regular que exige el subject, asignándole el rol de "autor".
 * `exec /usr/sbin/php-fpm7.4 -F`: Reemplaza el proceso bash por el de PHP-FPM. La bandera `-F` (Foreground) fuerza a PHP a quedarse en primer plano (como PID 1), evitando que el contenedor muera.
 
-### El Dockerfile
+### Dockerfile
 
 * `FROM debian:bullseye`: Usa la base permitida por el subject.
 * `RUN apt install ... wget curl php7.4 php7.4-fpm php7.4-mysql mariadb-client`: Instala el motor PHP, el conector entre PHP y MySQL, y el cliente de MariaDB necesario para hacer el "ping".
@@ -130,7 +127,7 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 * `EXPOSE 9000`: Documenta que el contenedor recibe tráfico en este puerto.
 * `ENTRYPOINT ["/wordpress.sh"]`: Define nuestro script de bash como el comando principal del contenedor.
 
-# Documentación del Bloque 4: NGINX y Seguridad TLS
+# NGINX y Seguridad TLS
 
 ## 1. Conceptos Fundamentales
 *   **NGINX:** Es el servidor web que actúa como proxy inverso. Es la única puerta de entrada a nuestra infraestructura. Recibe las peticiones del exterior, comprueba que sean seguras y las redirige al contenedor de WordPress.
@@ -148,7 +145,7 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 *   **El parámetro `-subj`**: Rellena automáticamente los datos del certificado (País: ES, Organización: 42, Common Name: miparis.42.fr).
 *   **Regla del PID 1 (`daemon off;`)**: Por defecto, NGINX se ejecuta en segundo plano. El comando `CMD ["nginx", "-g", "daemon off;"]` lo fuerza a ejecutarse en primer plano, evitando que el contenedor se apague inmediatamente tras arrancar.
 
-# Documentación del Bloque 5: Orquestación con Docker Compose
+# Docker Compose
 
 ## 1. Conceptos Fundamentales
 *   **Docker Compose (`docker-compose.yml`):** Es la herramienta que permite definir y ejecutar aplicaciones Docker multi-contenedor. En lugar de levantar cada contenedor por separado, usamos este archivo YAML como "plano maestro" para indicar redes, volúmenes, puertos y el orden de encendido.
@@ -161,12 +158,9 @@ Falsa sensación de seguridad con rutas locales: El proyecto exige /home/login/d
 
 ---
 
-# Documentación del Bloque 6: Automatización (Makefile)
+# Automatización (Makefile)
 
-## 1. Concepto
-Un `Makefile` es un script de automatización estructurado en "reglas" o "targets". Su objetivo en Inception es servir de panel de control para no memorizar comandos largos de Docker. Exige el uso de tabulaciones para la indentación de los comandos.
-
-## 2. Reglas Principales
+## 1. Reglas Principales de Docker
 *   `up`: Ejecuta `docker-compose up -d --build`. Construye las imágenes si hay cambios y levanta los contenedores en modo *detached* (segundo plano).
 *   `down`: Ejecuta `docker-compose down`. Detiene los contenedores de forma limpia sin borrar los datos ni las imágenes.
 *   `clean`: Añade las banderas `-v` y `--rmi all` al comando down para borrar volúmenes virtuales, redes e imágenes base descargadas.
